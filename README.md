@@ -1,6 +1,17 @@
 # Bank Problem & Countermeasure
 
-Aplikasi offline (PWA) untuk mencatat problem lapangan dan countermeasure.
-Data tersimpan di HP masing-masing pengguna (IndexedDB), tidak di repo ini.
+Aplikasi offline-first (PWA) untuk mencatat problem lapangan: fenomena, foto, 5 Why, root cause,
+countermeasure, PIC, dan verifikasi.
 
-Buka: https://adedanfik-ux.github.io/bank-problem/
+- **Buka / install:** https://adedanfik-ux.github.io/Bank-Problem/
+- **Offline:** data tersimpan di HP (IndexedDB), tetap jalan tanpa internet.
+- **Sinkron antar perangkat (opsional):** Google Sheets + Drive lewat Apps Script → lihat [SETUP-SINKRON.md](SETUP-SINKRON.md).
+
+Repo ini hanya berisi kode. Data problem tidak pernah disimpan di repo.
+
+| File | Fungsi |
+|---|---|
+| `index.html` | Aplikasi |
+| `sw.js` | Cache offline (naikkan `VERSION` setiap rilis) |
+| `manifest.webmanifest`, `icon-*.png` | Identitas aplikasi untuk install |
+| `server/Code.gs` | Server sinkron Google Apps Script |

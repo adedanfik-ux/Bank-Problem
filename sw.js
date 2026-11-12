@@ -1,6 +1,6 @@
 /* Bank Problem — service worker: simpan semua file aplikasi di HP agar jalan tanpa internet.
    Naikkan VERSION setiap kali index.html diubah supaya HP mengambil versi baru. */
-const VERSION = "v1.0.0";
+const VERSION = "v1.1.0";
 const CACHE = "bank-problem-" + VERSION;
 const ASSETS = [
   "./",

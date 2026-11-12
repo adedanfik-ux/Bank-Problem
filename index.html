@@ -125,6 +125,16 @@ main{padding-block:0 calc(110px + env(safe-area-inset-bottom,0px))}
 .btn.danger{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 45%,var(--line))}
 .btn:disabled{opacity:.55;cursor:default}
 .stat{font-family:var(--font-m);font-variant-numeric:tabular-nums}
+.syncchip{background:none;border:0;padding:0;margin:0;color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+.syncchip::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--navy-muted)}
+.syncchip[data-s="ok"]::before{background:var(--closed)}
+.syncchip[data-s="pending"]::before{background:var(--prog)}
+.syncchip[data-s="busy"]::before{background:var(--accent)}
+.syncchip[data-s="err"]::before{background:var(--open)}
+.syncchip[data-s="err"]{color:#ffb4a8}
+.f .hint{font-size:.74rem;color:var(--muted);margin-top:4px}
+.okmsg{color:var(--closed)}
+.errmsg{color:var(--danger)}
 
 .fgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .fgrid .full{grid-column:1/-1}
@@ -152,7 +162,7 @@ main{padding-block:0 calc(110px + env(safe-area-inset-bottom,0px))}
 <header class="top gut">
   <div class="wrap">
     <div class="brand">
-      <div><small>Engineering · Offline</small><h1>Bank Problem &amp; Countermeasure</h1></div>
+      <div><small>Engineering · <button type="button" class="syncchip" id="sync-status" data-s="local">Lokal</button></small><h1>Bank Problem &amp; Countermeasure</h1></div>
       <button class="ghost" id="btn-data" type="button">Data &amp; Backup</button>
     </div>
     <div class="search">
@@ -272,7 +282,31 @@ main{padding-block:0 calc(110px + env(safe-area-inset-bottom,0px))}
         <div><span>Backup terakhir</span><b id="d-last">–</b></div>
         <div><span>Mode</span><b id="d-mode">–</b></div>
       </div>
-      <p class="foot" style="margin-top:10px">Data hanya ada di HP ini. Menghapus aplikasi atau "Hapus data situs" di browser akan menghapus semua data. Lakukan backup rutin.</p>
+      <p class="foot" style="margin-top:10px">Tanpa sinkron online, data hanya ada di HP ini: menghapus aplikasi atau "Hapus data situs" di browser akan menghapus semua data. Aktifkan sinkron atau lakukan backup rutin.</p>
+    </div>
+    <div class="sec" id="sync-sec"><h4>Sinkron online (Google Sheets)</h4>
+      <p>Data tetap tersimpan di HP dan bisa dipakai offline. Saat ada internet, perubahan dikirim ke Google Sheet dan foto ke Google Drive, lalu perangkat lain menarik data yang sama.</p>
+      <div class="fgrid">
+        <div class="f full"><label for="s-url">URL Web App</label><input id="s-url" type="url" inputmode="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec"></div>
+        <div class="f"><label for="s-token">Kode akses</label><input id="s-token" type="password" autocomplete="off" placeholder="dari sheet Pengaturan, sel B1"></div>
+        <div class="f"><label for="s-device">Nama perangkat</label><input id="s-device" autocomplete="off" placeholder="mis. HP Ade"><div class="hint">Tercatat di riwayat perubahan.</div></div>
+      </div>
+      <div class="actions" style="margin-top:12px">
+        <button class="btn primary" type="button" id="s-save">Simpan &amp; tes koneksi</button>
+        <button class="btn" type="button" id="s-sync">Sinkron sekarang</button>
+        <button class="btn danger" type="button" id="s-off" hidden>Putuskan</button>
+      </div>
+      <p class="foot" id="s-msg" hidden></p>
+      <div class="kv" style="margin-top:12px">
+        <div><span>Status</span><b id="s-state">–</b></div>
+        <div><span>Sinkron terakhir</span><b id="s-last">–</b></div>
+        <div><span>Belum terkirim</span><b class="stat" id="s-pending">–</b></div>
+      </div>
+      <div class="confirm" id="s-off-confirm" hidden>
+        <span>Putuskan dari server? Data di HP tetap ada, tapi tidak lagi tersinkron.</span>
+        <button class="btn" type="button" id="s-off-no">Batal</button>
+        <button class="btn danger" type="button" id="s-off-yes">Putuskan</button>
+      </div>
     </div>
     <div class="sec"><h4>Backup &amp; pulihkan</h4>
       <p>File backup (.json) berisi semua problem dan foto. Simpan di Google Drive, WA ke diri sendiri, atau kirim ke PC.</p>
@@ -339,7 +373,7 @@ function isLate(r,t){return !!r.due&&r.status!=="Closed"&&r.due<t;}
 function pill(s){const k=STKEY[s]||"open";return '<span class="pill st-'+k+'">'+esc(s||"Open")+"</span>";}
 function nextKode(tgl){
   const d=(tgl||todayStr()).replace(/-/g,"");const pre="PC-"+d.slice(2,6)+"-";
-  let max=0;rows.forEach(r=>{if(r.kode&&r.kode.startsWith(pre)){const n=parseInt(r.kode.slice(pre.length),10);if(n>max)max=n;}});
+  let max=0;allRecs.forEach(r=>{if(r.kode&&r.kode.startsWith(pre)){const n=parseInt(r.kode.slice(pre.length),10);if(n>max)max=n;}});
   return pre+String(max+1).padStart(3,"0");}
 let toastT=null;
 function toast(m){const t=$("#toast");t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>{t.hidden=true;},2800);}
@@ -347,16 +381,32 @@ function lock(){document.documentElement.classList.toggle("locked",!$("#detail")
 function lsGet(k){try{return localStorage.getItem(k);}catch(_){return null;}}
 function lsSet(k,v){try{localStorage.setItem(k,v);}catch(_){}}
 
+let allRecs=[],pendingCount=0;
 async function reload(){
-  rows=(await getAll("problems")).sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||""));
-  loaded=true;renderAll();
+  allRecs=await getAll("problems");
+  pendingCount=allRecs.filter(r=>r._dirty).length;
+  rows=allRecs.filter(r=>!r.deleted).sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||""));
+  loaded=true;renderAll();setSyncStatus();
 }
 
 /* ---------- photos ---------- */
+const photoFetches=new Map();
 async function photoURL(id){
   if(urlCache.has(id))return urlCache.get(id);
-  const rec=await getOne("photos",id);if(!rec||!rec.blob)return null;
+  let rec=await getOne("photos",id);
+  if((!rec||!rec.blob)&&syncReady()&&navigator.onLine)rec=await fetchRemotePhoto(id);
+  if(!rec||!rec.blob)return null;
+  if(urlCache.has(id))return urlCache.get(id);
   const u=URL.createObjectURL(rec.blob);urlCache.set(id,u);return u;}
+function fetchRemotePhoto(id){
+  if(photoFetches.has(id))return photoFetches.get(id);
+  const p=(async()=>{
+    try{const j=await api("getPhoto",{id:id});const blob=b64ToBlob(j.data,j.type||"image/jpeg");
+      const rec={id:id,blob:blob,type:j.type||"image/jpeg",uploaded:true,createdAt:new Date().toISOString()};await putOne("photos",rec);return rec;}
+    catch(_){return null;}
+    finally{photoFetches.delete(id);}})();
+  photoFetches.set(id,p);return p;}
+function b64ToBlob(b64,type){const bin=atob(b64);const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return new Blob([u],{type:type});}
 function dropURL(id){const u=urlCache.get(id);if(u){URL.revokeObjectURL(u);urlCache.delete(id);}}
 function hydrate(root){root.querySelectorAll("img[data-pid]").forEach(async img=>{
   try{const u=await photoURL(img.dataset.pid);if(u){img.src=u;return;}}catch(_){}
@@ -412,7 +462,8 @@ function renderList(){
 function renderBackupNote(){
   const n=$("#note");const last=lsGet(LS_BACKUP);
   const days=last?(Date.now()-new Date(last).getTime())/864e5:Infinity;
-  if(rows.length&&days>7){n.innerHTML="<span>"+(last?"Backup terakhir "+Math.floor(days)+" hari lalu.":"Data belum pernah di-backup.")+" Data hanya tersimpan di HP ini.</span>"+'<button class="linkbtn" type="button" id="note-backup">Backup sekarang</button>';n.hidden=false;}
+  const ls=lsGet(K.last);const synced=syncReady()&&ls&&(Date.now()-new Date(ls).getTime())/864e5<=7;
+  if(rows.length&&days>7&&!synced){n.innerHTML="<span>"+(last?"Backup terakhir "+Math.floor(days)+" hari lalu.":"Data belum pernah di-backup.")+" Data hanya tersimpan di HP ini.</span>"+'<button class="linkbtn" type="button" id="note-backup">Backup sekarang</button>';n.hidden=false;}
   else n.hidden=true;}
 function renderAll(){renderOptions();renderList();renderBackupNote();if(detailId)renderDetail();}
 
@@ -428,7 +479,7 @@ function renderDetail(){
   const photos=(r.photos||[]).map(id=>'<div class="ph"><img data-pid="'+esc(id)+'" alt="Foto problem" data-zoom></div>').join("");
   const cm=blk("Tindakan sementara",r.tempCM)+blk("Tindakan permanen",r.permCM)+blk("Pencegahan / yokoten",r.preventive);
   const late=isLate(r,todayStr());
-  const hist=(r.history||[]).slice().reverse().map(h=>"<li><time>"+fmtStamp(h.at)+"</time><span>"+esc((h.fields||[]).join(", "))+"</span></li>").join("");
+  const hist=(r.history||[]).slice().reverse().map(h=>"<li><time>"+fmtStamp(h.at)+"</time><span>"+esc((h.fields||[]).join(", "))+(h.by?' <span style="color:var(--muted)">· '+esc(h.by)+"</span>":"")+"</span></li>").join("");
   el.innerHTML=bar(esc(r.kode||"Problem"),'<button class="ghost" type="button" data-edit>Edit</button>')+
   '<div class="sheet-body gut"><div class="wrap">'+
   '<div class="sec"><div class="row1"><span class="code">'+fmtDate(r.tgl)+"</span>"+pill(r.status)+'</div><h3 style="margin:8px 0 0;font-size:1.12rem;line-height:1.35;overflow-wrap:anywhere">'+esc(r.fenomena)+"</h3>"+(r.detail?'<p class="txt" style="margin-top:8px;color:var(--muted)">'+esc(r.detail)+"</p>":"")+"</div>"+
@@ -495,22 +546,27 @@ async function save(ev){
   setErr("");saving=true;["#f-save","#f-save-top"].forEach(s=>$(s).disabled=true);
   const now=new Date().toISOString();const wasEdit=!!editing;const removed=removedPhotos.slice();
   try{
-    let rec;
+    let rec;const by=cfg().device;
     if(wasEdit){
       const old=rows.find(x=>x.id===editing.id)||editing;const ch=changedFields(old,d);
-      rec=Object.assign({},old,d,{updatedAt:ch.length?now:old.updatedAt});
-      if(ch.length)rec.history=(old.history||[]).concat([{at:now,fields:ch}]).slice(-50);
-    }else rec=Object.assign({id:uid(),kode:nextKode(d.tgl),createdAt:now,updatedAt:now,history:[]},d);
+      rec=Object.assign({},old,d);
+      if(ch.length){rec.updatedAt=now;rec._dirty=true;rec.device=by;rec.history=(old.history||[]).concat([{at:now,fields:ch,by:by}]).slice(-50);}
+    }else rec=Object.assign({id:uid(),kode:nextKode(d.tgl),createdAt:now,updatedAt:now,device:by,_dirty:true,history:[{at:now,fields:["Dibuat"],by:by}]},d);
     await putOne("problems",rec);
     newPhotos=[];closeForm();
     for(const id of removed)await removePhoto(id);
     await reload();
     toast(wasEdit?"Perubahan disimpan":"Problem tersimpan · "+rec.kode);
+    scheduleSync();
   }catch(e){setErr(e&&e.name==="QuotaExceededError"?"Memori HP penuh. Kosongkan ruang lalu coba lagi.":"Gagal menyimpan: "+((e&&e.message)||"error tidak dikenal"));}
   finally{saving=false;["#f-save","#f-save-top"].forEach(s=>$(s).disabled=false);}}
 async function del(){
   if(!editing)return;const r=editing;$("#f-del-yes").disabled=true;
-  try{await delOne("problems",r.id);const ph=(r.photos||[]).concat(newPhotos);closeForm();for(const id of ph)await removePhoto(id);closeDetail();await reload();toast("Problem dihapus");}
+  try{
+    const now=new Date().toISOString();
+    const tomb=Object.assign({},r,{deleted:true,updatedAt:now,_dirty:true,device:cfg().device,history:(r.history||[]).concat([{at:now,fields:["Dihapus"],by:cfg().device}]).slice(-50)});
+    await putOne("problems",tomb);
+    const ph=(r.photos||[]).concat(newPhotos);closeForm();for(const id of ph)await removePhoto(id);closeDetail();await reload();toast("Problem dihapus");scheduleSync();}
   catch(e){setErr("Gagal menghapus.");}
   finally{$("#f-del-yes").disabled=false;$("#f-confirm").hidden=true;}}
 
@@ -553,15 +609,125 @@ async function restore(file){
     let add=0,upd=0,skip=0,ph=0;
     for(const p of data.problems){
       if(!p||!p.id)continue;const cur=existing.get(p.id);
-      if(!cur){await putOne("problems",p);add++;}
-      else if((p.updatedAt||"")>(cur.updatedAt||"")){await putOne("problems",p);upd++;}
+      if(!cur){await putOne("problems",Object.assign({},p,{_dirty:true}));add++;}
+      else if((p.updatedAt||"")>(cur.updatedAt||"")){await putOne("problems",Object.assign({},p,{_dirty:true}));upd++;}
       else skip++;}
     for(const f of (data.photos||[])){
       if(!f||!f.id||!f.data)continue;if(await getOne("photos",f.id))continue;
       await putOne("photos",{id:f.id,blob:await dataURLToBlob(f.data),type:f.type||"image/jpeg",createdAt:f.createdAt});ph++;}
     msg.textContent="Selesai: "+add+" baru, "+upd+" diperbarui, "+skip+" sudah sama/lebih baru di HP ini, "+ph+" foto dipulihkan.";
-    await reload();renderDataSheet();
+    await reload();renderDataSheet();scheduleSync();
   }catch(e){msg.textContent="Gagal memulihkan: "+((e&&e.message)||"file tidak valid");}}
+
+/* ---------- sinkron online ---------- */
+const K={url:"bp.syncUrl",token:"bp.syncToken",device:"bp.device",pull:"bp.lastPull",init:"bp.syncInit",last:"bp.lastSync",err:"bp.syncErr"};
+function cfg(){return {url:lsGet(K.url)||"",token:lsGet(K.token)||"",device:lsGet(K.device)||""};}
+function syncReady(){const c=cfg();return !!(c.url&&c.token);}
+function validUrl(u){return /^https:\/\/script\.google(usercontent)?\.com\/.+\/exec$/.test(u);}
+async function api(action,payload){
+  const c=cfg();const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),90000);
+  try{
+    let res;
+    try{res=await fetch(c.url,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(Object.assign({token:c.token,action:action,device:c.device},payload||{})),signal:ctl.signal,redirect:"follow"});}
+    catch(e){if(e&&e.name==="AbortError")throw new Error("Server tidak merespons (timeout).");throw new Error("Tidak bisa terhubung ke server. Cek internet, URL Web App, dan akses 'Anyone'.");}
+    if(!res.ok)throw new Error("Server menolak (HTTP "+res.status+").");
+    let j;try{j=await res.json();}catch(_){throw new Error("Respon server tidak valid. Pastikan URL berakhiran /exec dan deploy dengan akses 'Anyone'.");}
+    if(!j||!j.ok){const m={unauthorized:"Kode akses salah.",not_setup:"Server belum di-setup. Jalankan fungsi setupAwal di Apps Script.",unknown_action:"Versi server terlalu lama. Deploy ulang Code.gs terbaru."}[j&&j.error]||(j&&(j.message||j.error))||"Error server";
+      const e=new Error(m);e.code=j&&j.error;throw e;}
+    return j;
+  }finally{clearTimeout(t);}}
+let syncing=false,syncAgain=false,syncT=null,syncBusyText="";
+function setSyncStatus(text){
+  const el=$("#sync-status");let s,label;
+  if(!syncReady()){s="local";label="Lokal";}
+  else if(syncing){s="busy";label=text||syncBusyText||"Menyinkron…";}
+  else if(lsGet(K.err)){s="err";label="Gagal sinkron";}
+  else if(pendingCount){s="pending";label=pendingCount+" belum terkirim";}
+  else if(!navigator.onLine){s="pending";label="Offline";}
+  else{const l=lsGet(K.last);s="ok";label=l?"Tersinkron "+fmtStamp(l).split(" ").pop():"Belum sinkron";}
+  el.dataset.s=s;el.textContent=label;
+  if(!$("#data-sheet").hidden)renderSyncSettings();}
+function scheduleSync(ms){if(!syncReady())return;clearTimeout(syncT);syncT=setTimeout(()=>syncNow(false),ms==null?1500:ms);}
+function strip(r){const o=Object.assign({},r);delete o._dirty;delete o.syncedAt;return o;}
+async function syncNow(manual){
+  if(!syncReady()){if(manual)toast("Isi URL Web App dan kode akses dulu.");return;}
+  if(!navigator.onLine){setSyncStatus();if(manual)toast("Sedang offline. Data dikirim otomatis saat ada internet.");return;}
+  if(syncing){syncAgain=true;return;}
+  syncing=true;syncBusyText="Menyinkron…";setSyncStatus();
+  const c=cfg();let sent=0,got=0,upPh=0;
+  try{
+    const first=lsGet(K.init)!==c.url;
+    const all=await getAll("problems");
+    /* 1. foto yang belum ter-upload */
+    const refd=new Set(all.filter(r=>!r.deleted).flatMap(r=>r.photos||[]));
+    const phs=(await getAll("photos")).filter(p=>!p.uploaded&&refd.has(p.id));
+    for(let i=0;i<phs.length;i++){const p=phs[i];
+      syncBusyText="Upload foto "+(i+1)+"/"+phs.length;setSyncStatus();
+      const data=(await blobToDataURL(p.blob)).split(",")[1];
+      await api("uploadPhoto",{id:p.id,type:p.type||"image/jpeg",data:data});
+      p.uploaded=true;await putOne("photos",p);upPh++;}
+    /* 2. kirim record yang berubah */
+    const dirty=all.filter(r=>r._dirty||(first&&!r.deleted));
+    const stale=[];
+    for(let i=0;i<dirty.length;i+=40){
+      syncBusyText="Kirim data "+Math.min(i+40,dirty.length)+"/"+dirty.length;setSyncStatus();
+      const chunk=dirty.slice(i,i+40).map(strip);
+      const res=await api("push",{records:chunk});
+      (res.stale||[]).forEach(id=>stale.push(id));
+      for(const r of chunk){const cur=await getOne("problems",r.id);
+        if(cur&&cur._dirty&&cur.updatedAt===r.updatedAt){cur._dirty=false;await putOne("problems",cur);}}
+      sent+=chunk.length;}
+    /* 3. tarik perubahan dari server */
+    syncBusyText="Ambil data…";setSyncStatus();
+    const pr=await api("pull",{since:first?"":(lsGet(K.pull)||""),ids:stale});
+    for(const s of (pr.records||[])){
+      const loc=await getOne("problems",s.id);
+      if(loc&&loc._dirty&&(loc.updatedAt||"")>(s.updatedAt||""))continue;
+      if(loc&&!loc._dirty&&loc.updatedAt===s.updatedAt&&loc.kode===s.kode&&!!loc.deleted===!!s.deleted)continue;
+      const rec=Object.assign({},s,{_dirty:false});delete rec.syncedAt;
+      const keep=new Set(rec.deleted?[]:(rec.photos||[]));
+      for(const pid of ((loc&&loc.photos)||[]))if(!keep.has(pid))await removePhoto(pid);
+      await putOne("problems",rec);got++;}
+    lsSet(K.pull,pr.serverTime);lsSet(K.init,c.url);lsSet(K.last,new Date().toISOString());
+    try{localStorage.removeItem(K.err);}catch(_){}
+    if(manual)toast("Sinkron selesai · "+sent+" dikirim, "+got+" diterima"+(upPh?", "+upPh+" foto":""));
+  }catch(e){
+    lsSet(K.err,(e&&e.message)||"error");
+    if(manual)toast("Sinkron gagal: "+((e&&e.message)||"error"));
+  }finally{
+    syncing=false;syncBusyText="";
+    await reload();
+    if(syncAgain){syncAgain=false;scheduleSync(500);}
+  }}
+function renderSyncSettings(){
+  const c=cfg();
+  const setv=(id,v)=>{const el=$(id);if(document.activeElement!==el)el.value=v;};
+  setv("#s-url",c.url);setv("#s-token",c.token);setv("#s-device",c.device);
+  $("#s-off").hidden=!syncReady();
+  const err=lsGet(K.err),last=lsGet(K.last);
+  $("#s-state").textContent=!syncReady()?"Belum terhubung":syncing?(syncBusyText||"Menyinkron…"):err?"Gagal: "+err:!navigator.onLine?"Offline":"Terhubung";
+  $("#s-state").className=err&&syncReady()?"errmsg":(syncReady()&&!syncing?"okmsg":"");
+  $("#s-last").textContent=last&&syncReady()?fmtStamp(last):"–";
+  $("#s-pending").textContent=pendingCount;}
+function sMsg(t,ok){const m=$("#s-msg");m.hidden=!t;m.textContent=t||"";m.className="foot "+(ok?"okmsg":"errmsg");}
+async function saveSyncSettings(){
+  const url=$("#s-url").value.trim(),token=$("#s-token").value.trim(),device=$("#s-device").value.trim();
+  if(!validUrl(url)){sMsg("URL harus URL Web App Apps Script yang berakhiran /exec.",false);return;}
+  if(!token){sMsg("Kode akses wajib diisi (lihat sheet Pengaturan, sel B1).",false);return;}
+  if(!device){sMsg("Isi nama perangkat, mis. \"HP Ade\".",false);return;}
+  const prev=cfg();const btn=$("#s-save");btn.disabled=true;sMsg("Menghubungi server…",true);
+  lsSet(K.url,url);lsSet(K.token,token);lsSet(K.device,device);
+  if(prev.url!==url){try{localStorage.removeItem(K.pull);localStorage.removeItem(K.init);}catch(_){}
+    /* server baru: semua foto perlu di-upload ulang */
+    try{for(const p of await getAll("photos")){if(p.uploaded){p.uploaded=false;await putOne("photos",p);}}}catch(_){}}
+  try{const j=await api("ping");sMsg("Terhubung. Server berisi "+j.rows+" problem. Menyinkron…",true);
+    try{localStorage.removeItem(K.err);}catch(_){}
+    await syncNow(true);sMsg("Terhubung dan tersinkron.",true);}
+  catch(e){sMsg((e&&e.message)||"Gagal terhubung.",false);}
+  finally{btn.disabled=false;renderSyncSettings();setSyncStatus();}}
+async function disconnectSync(){
+  ["url","token","pull","init","last","err"].forEach(k=>{try{localStorage.removeItem(K[k]);}catch(_){}});
+  $("#s-off-confirm").hidden=true;sMsg("Sinkron diputus. Data tetap ada di HP ini.",true);renderSyncSettings();setSyncStatus();}
 
 /* ---------- data sheet / install ---------- */
 let installEvt=null;
@@ -569,7 +735,9 @@ window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();installEvt=
 window.addEventListener("appinstalled",()=>{installEvt=null;$("#d-install-sec").hidden=true;toast("Aplikasi terpasang");});
 function standalone(){return matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;}
 async function renderDataSheet(){
-  try{$("#d-count").textContent=await countAll("problems");$("#d-photos").textContent=await countAll("photos");}catch(_){}
+  $("#d-count").textContent=rows.length;
+  try{$("#d-photos").textContent=await countAll("photos");}catch(_){}
+  renderSyncSettings();
   try{if(navigator.storage&&navigator.storage.estimate){const e=await navigator.storage.estimate();$("#d-usage").textContent=fmtBytes(e.usage)+" dari "+fmtBytes(e.quota);}}catch(_){}
   try{const p=navigator.storage&&navigator.storage.persisted?await navigator.storage.persisted():false;$("#d-persist").textContent=p?"Aktif":"Belum (bisa dihapus browser saat memori penuh)";}catch(_){}
   const last=lsGet(LS_BACKUP);$("#d-last").textContent=last?fmtStamp(last):"Belum pernah";
@@ -603,6 +771,15 @@ $("#f-del-no").addEventListener("click",()=>{$("#f-confirm").hidden=true;});
 $("#f-del-yes").addEventListener("click",del);
 $("#btn-data").addEventListener("click",openData);
 $("#d-close").addEventListener("click",()=>{$("#data-sheet").hidden=true;lock();});
+$("#sync-status").addEventListener("click",openData);
+$("#s-save").addEventListener("click",saveSyncSettings);
+$("#s-sync").addEventListener("click",()=>syncNow(true));
+$("#s-off").addEventListener("click",()=>{$("#s-off-confirm").hidden=false;});
+$("#s-off-no").addEventListener("click",()=>{$("#s-off-confirm").hidden=true;});
+$("#s-off-yes").addEventListener("click",disconnectSync);
+window.addEventListener("online",()=>{setSyncStatus();scheduleSync(800);});
+window.addEventListener("offline",()=>setSyncStatus());
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState!=="visible")return;const l=lsGet(K.last);if(!l||Date.now()-new Date(l).getTime()>60000)scheduleSync(600);});
 $("#d-backup").addEventListener("click",backup);
 $("#d-csv").addEventListener("click",exportCsv);
 $("#d-import-file").addEventListener("change",e=>{const f=e.target.files&&e.target.files[0];if(f)restore(f);e.target.value="";});
@@ -618,6 +795,7 @@ renderList();
   try{idb=await openDB();await reload();}
   catch(e){loaded=true;renderList();const n=$("#note");n.textContent="Penyimpanan HP tidak bisa dibuka ("+((e&&e.message)||"error")+"). Pastikan tidak memakai mode Incognito.";n.hidden=false;return;}
   try{if(navigator.storage&&navigator.storage.persist&&!(await navigator.storage.persisted()))await navigator.storage.persist();}catch(_){}
+  scheduleSync(300);
 })();
 if("serviceWorker" in navigator&&location.protocol!=="file:"){window.addEventListener("load",()=>{navigator.serviceWorker.register("sw.js").catch(()=>{});});}
 })();
